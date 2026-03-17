@@ -15,6 +15,27 @@ app.use(express.static(path.join(__dirname, "public")));
 const UPLOAD_DIR = path.join(__dirname, "public", "uploads");
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
+
+
+
+// ROUTE: /channels — returns list of channels for the dropdown
+app.get("/channels", async (req, res) => {
+  try {
+    const result = await slackApi("conversations.list", {
+      types: "public_channel,private_channel",
+      limit: 200
+    });
+    const channels = result.data.channels
+      .filter(c => !c.is_archived)
+      .map(c => ({ id: c.id, name: c.name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    res.json({ ok: true, channels });
+  } catch (err) {
+    res.json({ ok: false, channels: [] });
+  }
+});
+
+
 // ─────────────────────────────────────────────
 // ROUTE: /upload-image — receives base64, saves to disk, returns URL
 // ─────────────────────────────────────────────
