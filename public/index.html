@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Poll Builder</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0c0c0f;
+    --surface: #141418;
+    --surface2: #1c1c22;
+    --border: #2a2a35;
+    --accent: #e8ff47;
+    --accent2: #ff6b35;
+    --text: #f0f0f0;
+    --muted: #666;
+    --success: #4ade80;
+    --radius: 12px;
+  }
+
+  body {
+    font-family: 'DM Mono', monospace;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 40px 20px 80px;
+    background-image: radial-gradient(ellipse at 20% 0%, rgba(232,255,71,0.04) 0%, transparent 60%),
+                      radial-gradient(ellipse at 80% 100%, rgba(255,107,53,0.04) 0%, transparent 60%);
+  }
+
+  .container {
+    max-width: 680px;
+    margin: 0 auto;
+  }
+
+  header {
+    margin-bottom: 48px;
+    animation: fadeUp 0.5s ease both;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+
+  .logo-icon {
+    width: 36px;
+    height: 36px;
+    background: var(--accent);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+  }
+
+  h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+
+  .subtitle {
+    color: var(--muted);
+    font-size: 13px;
+    margin-top: 4px;
+  }
+
+  .section {
+    margin-bottom: 28px;
+    animation: fadeUp 0.5s ease both;
+  }
+
+  .section:nth-child(2) { animation-delay: 0.05s; }
+  .section:nth-child(3) { animation-delay: 0.1s; }
+  .section:nth-child(4) { animation-delay: 0.15s; }
+
+  label {
+    display: block;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+
+  input[type="text"], select {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 14px;
+    padding: 14px 16px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  input[type="text"]:focus, select:focus {
+    border-color: var(--accent);
+  }
+
+  select option { background: var(--surface2); }
+
+  /* OPTIONS */
+  .options-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .option-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: border-color 0.2s;
+    animation: fadeUp 0.3s ease both;
+  }
+
+  .option-card:hover { border-color: #3a3a48; }
+
+  .option-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .option-num {
+    font-size: 11px;
+    color: var(--accent);
+    font-weight: 500;
+    min-width: 20px;
+  }
+
+  .option-text-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 14px;
+    outline: none;
+    padding: 0;
+  }
+
+  .option-text-input::placeholder { color: var(--muted); }
+
+  .remove-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 4px;
+    line-height: 1;
+    border-radius: 4px;
+    transition: color 0.2s, background 0.2s;
+  }
+
+  .remove-btn:hover { color: var(--accent2); background: rgba(255,107,53,0.1); }
+
+  /* DROP ZONE */
+  .drop-zone {
+    position: relative;
+    min-height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .drop-zone.has-image { min-height: 160px; }
+
+  .drop-zone:hover { background: rgba(232,255,71,0.03); }
+
+  .drop-zone.dragging-over {
+    background: rgba(232,255,71,0.07);
+    outline: 2px dashed var(--accent);
+    outline-offset: -2px;
+  }
+
+  .drop-hint {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 12px;
+    pointer-events: none;
+    text-align: center;
+    padding: 16px;
+  }
+
+  .drop-hint-icon { font-size: 24px; opacity: 0.5; }
+
+  .drop-zone input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+  }
+
+  .preview-img {
+    width: 100%;
+    max-height: 200px;
+    object-fit: cover;
+    display: block;
+    pointer-events: none;
+  }
+
+  .img-overlay {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    gap: 6px;
+  }
+
+  .img-btn {
+    background: rgba(0,0,0,0.7);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 11px;
+    font-family: 'DM Mono', monospace;
+    padding: 4px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    transition: background 0.2s;
+  }
+
+  .img-btn:hover { background: rgba(0,0,0,0.9); }
+  .img-btn.danger:hover { color: var(--accent2); }
+
+  /* ADD OPTION */
+  .add-option-btn {
+    width: 100%;
+    background: transparent;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    padding: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-top: 4px;
+  }
+
+  .add-option-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(232,255,71,0.04);
+  }
+
+  /* CHANNEL ROW */
+  .channel-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+  }
+
+  .channel-row .field { flex: 1; }
+
+  /* SUBMIT */
+  .submit-btn {
+    width: 100%;
+    background: var(--accent);
+    color: #0c0c0f;
+    border: none;
+    border-radius: var(--radius);
+    font-family: 'Syne', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    padding: 18px;
+    cursor: pointer;
+    transition: transform 0.15s, opacity 0.15s;
+    letter-spacing: 0.3px;
+  }
+
+  .submit-btn:hover { transform: translateY(-1px); opacity: 0.92; }
+  .submit-btn:active { transform: translateY(0); }
+  .submit-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  /* TOAST */
+  .toast {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 20px;
+    font-size: 13px;
+    opacity: 0;
+    transition: opacity 0.3s, transform 0.3s;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  .toast.success { border-color: var(--success); color: var(--success); }
+  .toast.error { border-color: var(--accent2); color: var(--accent2); }
+
+  /* PASTE HINT */
+  .paste-hint {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 6px;
+    text-align: center;
+  }
+
+  kbd {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div class="logo">
+      <div class="logo-icon">📊</div>
+      <h1>Poll Builder</h1>
+    </div>
+    <p class="subtitle">Build your poll → posts directly to Slack</p>
+  </header>
+
+  <!-- QUESTION -->
+  <div class="section">
+    <label>Poll Question</label>
+    <input type="text" id="poll-title" placeholder="Which design do you prefer?" />
+  </div>
+
+  <!-- CHANNEL -->
+  <div class="section">
+    <label>Post to Channel</label>
+    <input type="text" id="poll-channel" placeholder="#design-feedback or channel ID (e.g. C0123456)" />
+  </div>
+
+  <!-- OPTIONS -->
+  <div class="section">
+    <label>Options — drag, paste, or drop images onto each card</label>
+    <div class="options-list" id="options-list"></div>
+    <button class="add-option-btn" onclick="addOption()">＋ Add Option</button>
+    <p class="paste-hint">💡 Click an image zone then press <kbd>Ctrl+V</kbd> / <kbd>⌘V</kbd> to paste a screenshot</p>
+  </div>
+
+  <button class="submit-btn" id="submit-btn" onclick="submitPoll()">Post Poll to Slack →</button>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── STATE ───────────────────────────────────
+let options = [
+  { id: uid(), text: '', imageData: null, imageUrl: null },
+  { id: uid(), text: '', imageData: null, imageUrl: null }
+];
+
+let pasteTarget = null; // which option is focused for paste
+
+function uid() { return Math.random().toString(36).slice(2, 8); }
+
+// ─── RENDER ──────────────────────────────────
+function render() {
+  const list = document.getElementById('options-list');
+  list.innerHTML = '';
+  options.forEach((opt, i) => {
+    const card = document.createElement('div');
+    card.className = 'option-card';
+    card.dataset.id = opt.id;
+    card.innerHTML = `
+      <div class="option-header">
+        <span class="option-num">${String(i+1).padStart(2,'0')}</span>
+        <input class="option-text-input" type="text" placeholder="Option label…"
+          value="${escHtml(opt.text)}"
+          oninput="updateText('${opt.id}', this.value)" />
+        ${options.length > 2 ? `<button class="remove-btn" onclick="removeOption('${opt.id}')" title="Remove">✕</button>` : ''}
+      </div>
+      <div class="drop-zone ${opt.imageData || opt.imageUrl ? 'has-image' : ''}"
+           id="zone-${opt.id}"
+           ondragover="onDragOver(event,'${opt.id}')"
+           ondragleave="onDragLeave(event,'${opt.id}')"
+           ondrop="onDrop(event,'${opt.id}')"
+           onclick="focusZone('${opt.id}')">
+        <input type="file" accept="image/*" onchange="onFileInput(event,'${opt.id}')" />
+        ${opt.imageData ? `
+          <img class="preview-img" src="${opt.imageData}" alt="preview" />
+          <div class="img-overlay">
+            <button class="img-btn danger" onclick="clearImage(event,'${opt.id}')">✕ Remove</button>
+          </div>
+        ` : opt.imageUrl ? `
+          <img class="preview-img" src="${opt.imageUrl}" alt="preview" onerror="this.style.display='none'" />
+          <div class="img-overlay">
+            <button class="img-btn danger" onclick="clearImage(event,'${opt.id}')">✕ Remove</button>
+          </div>
+        ` : `
+          <div class="drop-hint">
+            <span class="drop-hint-icon">🖼</span>
+            <span>Drop image · paste · or click to browse</span>
+          </div>
+        `}
+      </div>
+    `;
+    list.appendChild(card);
+  });
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+}
+
+// ─── OPTION ACTIONS ──────────────────────────
+function addOption() {
+  if (options.length >= 10) return showToast('Max 10 options', 'error');
+  options.push({ id: uid(), text: '', imageData: null, imageUrl: null });
+  render();
+}
+
+function removeOption(id) {
+  options = options.filter(o => o.id !== id);
+  render();
+}
+
+function updateText(id, val) {
+  const o = options.find(o => o.id === id);
+  if (o) o.text = val;
+}
+
+function clearImage(e, id) {
+  e.stopPropagation();
+  const o = options.find(o => o.id === id);
+  if (o) { o.imageData = null; o.imageUrl = null; }
+  render();
+}
+
+// ─── DRAG & DROP ─────────────────────────────
+function onDragOver(e, id) {
+  e.preventDefault();
+  document.getElementById('zone-' + id)?.classList.add('dragging-over');
+}
+
+function onDragLeave(e, id) {
+  document.getElementById('zone-' + id)?.classList.remove('dragging-over');
+}
+
+function onDrop(e, id) {
+  e.preventDefault();
+  document.getElementById('zone-' + id)?.classList.remove('dragging-over');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('image/')) readFile(file, id);
+}
+
+function onFileInput(e, id) {
+  const file = e.target.files[0];
+  if (file) readFile(file, id);
+}
+
+function focusZone(id) {
+  pasteTarget = id;
+}
+
+// ─── FILE READER ─────────────────────────────
+function readFile(file, id) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const o = options.find(o => o.id === id);
+    if (o) { o.imageData = e.target.result; o.imageUrl = null; }
+    render();
+  };
+  reader.readAsDataURL(file);
+}
+
+// ─── PASTE ───────────────────────────────────
+document.addEventListener('paste', (e) => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      const targetId = pasteTarget || options[0]?.id;
+      if (targetId) {
+        readFile(file, targetId);
+        showToast('Image pasted ✓', 'success');
+      }
+      break;
+    }
+  }
+});
+
+// ─── SUBMIT ──────────────────────────────────
+async function submitPoll() {
+  const title = document.getElementById('poll-title').value.trim();
+  const channel = document.getElementById('poll-channel').value.trim();
+
+  if (!title) return showToast('Add a poll question', 'error');
+  if (!channel) return showToast('Add a channel', 'error');
+
+  const validOptions = options.filter(o => o.text.trim());
+  if (validOptions.length < 2) return showToast('Need at least 2 options with labels', 'error');
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Posting…';
+
+  // Upload images to server first (as base64), get back URLs
+  const processedOptions = await Promise.all(validOptions.map(async (opt) => {
+    if (opt.imageData) {
+      try {
+        const res = await fetch('/upload-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: opt.imageData })
+        });
+        const json = await res.json();
+        return { text: opt.text, imageUrl: json.url || null };
+      } catch {
+        return { text: opt.text, imageUrl: null };
+      }
+    }
+    return { text: opt.text, imageUrl: opt.imageUrl || null };
+  }));
+
+  try {
+    const res = await fetch('/create-poll', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, channel, options: processedOptions })
+    });
+
+    const json = await res.json();
+
+    if (json.ok) {
+      showToast('Poll posted to Slack! 🎉', 'success');
+      // Reset form
+      options = [
+        { id: uid(), text: '', imageData: null, imageUrl: null },
+        { id: uid(), text: '', imageData: null, imageUrl: null }
+      ];
+      document.getElementById('poll-title').value = '';
+      render();
+    } else {
+      showToast(json.error || 'Something went wrong', 'error');
+    }
+  } catch (err) {
+    showToast('Server error — check Railway logs', 'error');
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Post Poll to Slack →';
+}
+
+// ─── TOAST ───────────────────────────────────
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + type;
+  setTimeout(() => { t.className = 'toast'; }, 3000);
+}
+
+// ─── INIT ────────────────────────────────────
+render();
+</script>
+</body>
+</html>
