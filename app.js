@@ -1,10 +1,82 @@
 const express = require("express");
 const bodyParser = require("body-parser");
 const axios = require("axios");
+const path = require("path");
+const fs = require("fs");
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: "20mb" })); // Allow large base64 images
+
+// Serve the web UI
+app.use(express.static(path.join(__dirname, "public")));
+
+// Uploaded images stored temporarily in /public/uploads/
+const UPLOAD_DIR = path.join(__dirname, "public", "uploads");
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+// ─────────────────────────────────────────────
+// ROUTE: /upload-image — receives base64, saves to disk, returns URL
+// ─────────────────────────────────────────────
+app.post("/upload-image", (req, res) => {
+  try {
+    const { data } = req.body; // base64 data URL
+    const matches = data.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (!matches) return res.json({ ok: false, error: "Invalid image data" });
+
+    const ext = matches[1];
+    const buffer = Buffer.from(matches[2], "base64");
+    const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const filepath = path.join(UPLOAD_DIR, filename);
+
+    fs.writeFileSync(filepath, buffer);
+
+    const host = process.env.PUBLIC_URL || `https://slack-poll-bot-production.up.railway.app`;
+    res.json({ ok: true, url: `${host}/uploads/${filename}` });
+  } catch (err) {
+    res.json({ ok: false, error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────
+// ROUTE: /create-poll — called from web UI
+// ─────────────────────────────────────────────
+app.post("/create-poll", async (req, res) => {
+  const { title, channel, options } = req.body;
+
+  const pollData = {
+    id: Date.now().toString(36),
+    title,
+    options,
+    votes: {},
+    createdBy: "web",
+    channel
+  };
+
+  try {
+    const msgRes = await slackApi("chat.postMessage", {
+      channel,
+      text: title,
+      blocks: buildPollMessage(pollData)
+    });
+
+    if (!msgRes.data.ok) {
+      return res.json({ ok: false, error: msgRes.data.error });
+    }
+
+    const ts = msgRes.data.ts;
+    const key = pollKey(channel, ts);
+    polls.set(key, pollData);
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.json({ ok: false, error: err.response?.data?.error || err.message });
+  }
+});
+
+// ─────────────────────────────────────────────
+// ROUTE: /newpoll — slash command → redirect to web UI
+// ─────────────────────────────────────────────
 
 const BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 
@@ -193,17 +265,11 @@ function buildBar(pct) {
 // ROUTE: /newpoll — slash command
 // ─────────────────────────────────────────────
 app.post("/newpoll", async (req, res) => {
-  res.send(""); // Respond immediately
-  const trigger_id = req.body.trigger_id;
-
-  try {
-    await slackApi("views.open", {
-      trigger_id,
-      view: buildModal(2)
-    });
-  } catch (err) {
-    console.error("views.open failed:", err.response?.data || err.message);
-  }
+  const host = process.env.PUBLIC_URL || `https://slack-poll-bot-production.up.railway.app`;
+  res.json({
+    response_type: "ephemeral",
+    text: `📊 *Build your poll here:*\n${host}\n\n_Only you can see this link_`
+  });
 });
 
 // ─────────────────────────────────────────────
