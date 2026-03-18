@@ -6,12 +6,9 @@ const fs = require("fs");
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json({ limit: "20mb" }));
+app.use(bodyParser.json({ limit: "200mb" }));
 
 app.use(express.static(path.join(__dirname, "public")));
-
-const UPLOAD_DIR = path.join(__dirname, "public", "uploads");
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 const polls = new Map();
@@ -35,34 +32,73 @@ app.get("/debug-channels", async (req, res) => {
 // CHANNELS DROPDOWN
 app.get("/channels", async (req, res) => {
   try {
-    const result = await slackApi("conversations.list", {
+    const result = await axios.post("https://slack.com/api/conversations.list", {
       types: "public_channel,private_channel", limit: 200, exclude_archived: true
-    });
-    if (!result.data.ok) return res.json({ ok: false, error: result.data.error, channels: [] });
-    const channels = (result.data.channels || [])
-      .filter(c => !c.is_archived)
+    }, { headers: { Authorization: "Bearer " + BOT_TOKEN, "Content-Type": "application/json" } });
+    const allChannels = result.data.channels || [];
+    const channels = allChannels
+      .filter(c => c && !c.is_archived && c.id && c.name)
       .map(c => ({ id: c.id, name: c.name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => a.name.localeCompare(b.name, "he"));
     res.json({ ok: true, channels });
-  } catch (err) { res.json({ ok: false, error: err.message, channels: [] }); }
+  } catch (err) {
+    res.json({ ok: false, error: err.message, channels: [] });
+  }
 });
 
-// UPLOAD IMAGE
-app.post("/upload-image", (req, res) => {
+// UPLOAD FILE TO SLACK (images + videos)
+app.post("/upload-file", async (req, res) => {
   try {
-    const { data } = req.body;
-    const matches = data.match(/^data:image\/(\w+);base64,(.+)$/);
-    if (!matches) return res.json({ ok: false, error: "Invalid image data" });
-    const ext = matches[1];
+    const { data, filename, channel } = req.body;
+    const matches = data.match(/^data:([^;]+);base64,(.+)$/);
+    if (!matches) return res.json({ ok: false, error: "Invalid file data" });
+
+    const mimeType = matches[1];
     const buffer = Buffer.from(matches[2], "base64");
-    const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    fs.writeFileSync(path.join(UPLOAD_DIR, filename), buffer);
-    const host = process.env.PUBLIC_URL || `https://slack-poll-bot-production.up.railway.app`;
-    res.json({ ok: true, url: `${host}/uploads/${filename}` });
-  } catch (err) { res.json({ ok: false, error: err.message }); }
+    const fname = filename || `upload-${Date.now()}`;
+
+    // Step 1: Get Slack upload URL
+    const getUrlRes = await axios.post("https://slack.com/api/files.getUploadURLExternal", {
+      filename: fname,
+      length: buffer.length
+    }, { headers: { Authorization: `Bearer ${BOT_TOKEN}`, "Content-Type": "application/json" } });
+
+    if (!getUrlRes.data.ok) return res.json({ ok: false, error: getUrlRes.data.error });
+
+    const { upload_url, file_id } = getUrlRes.data;
+
+    // Step 2: Upload bytes to Slack
+    await axios.post(upload_url, buffer, {
+      headers: { "Content-Type": mimeType, "Content-Length": buffer.length },
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity
+    });
+
+    // Step 3: Complete upload
+    const completeRes = await axios.post("https://slack.com/api/files.completeUploadExternal", {
+      files: [{ id: file_id }],
+      channel_id: channel || undefined
+    }, { headers: { Authorization: `Bearer ${BOT_TOKEN}`, "Content-Type": "application/json" } });
+
+    if (!completeRes.data.ok) return res.json({ ok: false, error: completeRes.data.error });
+
+    const fileInfo = completeRes.data.files?.[0];
+    res.json({
+      ok: true,
+      file_id,
+      permalink: fileInfo?.permalink,
+      url_private: fileInfo?.url_private,
+      isVideo: mimeType.startsWith("video/"),
+      isImage: mimeType.startsWith("image/"),
+      mimeType
+    });
+  } catch (err) {
+    console.error("upload error:", err.response?.data || err.message);
+    res.json({ ok: false, error: err.message });
+  }
 });
 
-// CREATE POLL (from web UI)
+// CREATE POLL
 app.post("/create-poll", async (req, res) => {
   const { title, channel, options } = req.body;
   const pollData = { id: Date.now().toString(36), title, options, votes: {}, createdBy: "web", channel };
@@ -71,7 +107,9 @@ app.post("/create-poll", async (req, res) => {
     if (!msgRes.data.ok) return res.json({ ok: false, error: msgRes.data.error });
     polls.set(pollKey(channel, msgRes.data.ts), pollData);
     res.json({ ok: true });
-  } catch (err) { res.json({ ok: false, error: err.response?.data?.error || err.message }); }
+  } catch (err) {
+    res.json({ ok: false, error: err.response?.data?.error || err.message });
+  }
 });
 
 // SLASH COMMAND
@@ -80,7 +118,7 @@ app.post("/newpoll", (req, res) => {
   res.json({ response_type: "ephemeral", text: `📊 *Build your poll here:*\n${host}\n\n_Only you can see this link_` });
 });
 
-// INTERACTIONS (vote buttons)
+// VOTE INTERACTIONS
 app.post("/interactions", async (req, res) => {
   const payload = JSON.parse(req.body.payload);
   if (payload.type === "block_actions") {
@@ -120,7 +158,13 @@ function buildPollMessage(poll) {
     const pct = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
     const bar = "█".repeat(Math.round(pct / 10)) + "░".repeat(10 - Math.round(pct / 10));
     const voterList = voters[i].length > 0 ? voters[i].map(u => `<@${u}>`).join(", ") : "_no votes yet_";
-    if (opt.imageUrl) blocks.push({ type: "image", image_url: opt.imageUrl, alt_text: opt.text });
+
+    if (opt.isImage && opt.imageUrl) {
+      blocks.push({ type: "image", image_url: opt.imageUrl, alt_text: opt.text });
+    } else if (opt.isVideo && opt.imageUrl) {
+      blocks.push({ type: "section", text: { type: "mrkdwn", text: `🎬 <${opt.imageUrl}|▶ Watch: ${opt.text}>` } });
+    }
+
     blocks.push({
       type: "section",
       text: { type: "mrkdwn", text: `*${opt.text}*\n${bar} *${pct}%* (${count})\n${voterList}` },
