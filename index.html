@@ -108,7 +108,13 @@
     border-color: var(--accent);
   }
 
-  select option { background: var(--surface2); }
+  select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    cursor: pointer;
+  }
 
   /* OPTIONS */
   .options-list {
@@ -364,7 +370,9 @@
   <!-- CHANNEL -->
   <div class="section">
     <label>Post to Channel</label>
-    <input type="text" id="poll-channel" placeholder="#design-feedback or channel ID (e.g. C0123456)" />
+    <select id="poll-channel">
+      <option value="">Loading channels…</option>
+    </select>
   </div>
 
   <!-- OPTIONS -->
@@ -414,9 +422,13 @@ function render() {
            ondragleave="onDragLeave(event,'${opt.id}')"
            ondrop="onDrop(event,'${opt.id}')"
            onclick="focusZone('${opt.id}')">
-        <input type="file" accept="image/*" onchange="onFileInput(event,'${opt.id}')" />
+        <input type="file" accept="image/*,video/*" onchange="onFileInput(event,'${opt.id}')" />
         ${opt.imageData ? `
-          <img class="preview-img" src="${opt.imageData}" alt="preview" />
+          ${opt.isVideo ? `
+            <video class="preview-img" src="${opt.imageData}" controls style="max-height:200px;width:100%"></video>
+          ` : `
+            <img class="preview-img" src="${opt.imageData}" alt="preview" />
+          `}
           <div class="img-overlay">
             <button class="img-btn danger" onclick="clearImage(event,'${opt.id}')">✕ Remove</button>
           </div>
@@ -428,7 +440,7 @@ function render() {
         ` : `
           <div class="drop-hint">
             <span class="drop-hint-icon">🖼</span>
-            <span>Drop image · paste · or click to browse</span>
+            <span>Drop image or video · paste · or click</span>
           </div>
         `}
       </div>
@@ -479,7 +491,7 @@ function onDrop(e, id) {
   e.preventDefault();
   document.getElementById('zone-' + id)?.classList.remove('dragging-over');
   const file = e.dataTransfer.files[0];
-  if (file && file.type.startsWith('image/')) readFile(file, id);
+  if (file && (file.type.startsWith('image/') || file.type.startsWith('video/'))) readFile(file, id);
 }
 
 function onFileInput(e, id) {
@@ -496,7 +508,14 @@ function readFile(file, id) {
   const reader = new FileReader();
   reader.onload = (e) => {
     const o = options.find(o => o.id === id);
-    if (o) { o.imageData = e.target.result; o.imageUrl = null; }
+    if (o) {
+      o.imageData = e.target.result;
+      o.imageUrl = null;
+      o.filename = file.name;
+      o.mimeType = file.type;
+      o.isVideo = file.type.startsWith('video/');
+      o.isImage = file.type.startsWith('image/');
+    }
     render();
   };
   reader.readAsDataURL(file);
@@ -525,7 +544,7 @@ async function submitPoll() {
   const channel = document.getElementById('poll-channel').value.trim();
 
   if (!title) return showToast('Add a poll question', 'error');
-  if (!channel) return showToast('Add a channel', 'error');
+  if (!channel) return showToast('Pick a channel first', 'error');
 
   const validOptions = options.filter(o => o.text.trim());
   if (validOptions.length < 2) return showToast('Need at least 2 options with labels', 'error');
@@ -534,22 +553,29 @@ async function submitPoll() {
   btn.disabled = true;
   btn.textContent = 'Posting…';
 
-  // Upload images to server first (as base64), get back URLs
+  // Upload files to Slack, get back URLs
+  const channel = document.getElementById('poll-channel').value.trim();
+  showToast('Uploading files…', '');
   const processedOptions = await Promise.all(validOptions.map(async (opt) => {
     if (opt.imageData) {
       try {
-        const res = await fetch('/upload-image', {
+        const res = await fetch('/upload-file', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ data: opt.imageData })
+          body: JSON.stringify({ data: opt.imageData, filename: opt.filename || 'upload', channel })
         });
         const json = await res.json();
-        return { text: opt.text, imageUrl: json.url || null };
+        return {
+          text: opt.text,
+          imageUrl: json.permalink || json.url_private || null,
+          isVideo: json.isVideo || false,
+          isImage: json.isImage || false
+        };
       } catch {
-        return { text: opt.text, imageUrl: null };
+        return { text: opt.text, imageUrl: null, isVideo: false, isImage: false };
       }
     }
-    return { text: opt.text, imageUrl: opt.imageUrl || null };
+    return { text: opt.text, imageUrl: opt.imageUrl || null, isVideo: false, isImage: !!opt.imageUrl };
   }));
 
   try {
@@ -589,8 +615,26 @@ function showToast(msg, type = '') {
   setTimeout(() => { t.className = 'toast'; }, 3000);
 }
 
+// ─── LOAD CHANNELS ───────────────────────────
+async function loadChannels() {
+  const sel = document.getElementById('poll-channel');
+  try {
+    const res = await fetch('/channels');
+    const json = await res.json();
+    if (json.ok && json.channels.length > 0) {
+      sel.innerHTML = '<option value="">Pick a channel…</option>' +
+        json.channels.map(c => `<option value="${c.id}">#${c.name}</option>`).join('');
+    } else {
+      sel.innerHTML = '<option value="">No channels found — invite the bot first</option>';
+    }
+  } catch {
+    sel.innerHTML = '<option value="">Could not load channels</option>';
+  }
+}
+
 // ─── INIT ────────────────────────────────────
 render();
+loadChannels();
 </script>
 </body>
 </html>
